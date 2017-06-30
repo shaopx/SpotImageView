@@ -805,7 +805,6 @@ public class PinchImageView extends android.support.v7.widget.AppCompatImageView
     });
 
     private void exit() {
-        Log.d(TAG, "exit: ....", new RuntimeException("sssss"));
         View parent = (View) getParent();
         if(parent!=null && parent instanceof SIRelativeLayout){
             SIRelativeLayout siRl = (SIRelativeLayout) parent;
