@@ -1,8 +1,10 @@
 package com.spx.spotimageview;
 
 import android.animation.Animator;
+import android.app.Activity;
 import android.content.Context;
 import android.util.AttributeSet;
+import android.util.DisplayMetrics;
 import android.util.Log;
 import android.view.MotionEvent;
 import android.view.View;
@@ -20,9 +22,7 @@ public class SIRelativeLayout extends RelativeLayout {
     private int myToll;
 
     private PinchImageView target;
-    private SpotImageActivity activity;
-
-    private int oldX, oldY;
+    private Activity activity;
 
 
     public SIRelativeLayout(Context context) {
@@ -41,14 +41,13 @@ public class SIRelativeLayout extends RelativeLayout {
     }
 
     private void init(Context context) {
-        if (context != null && context instanceof SpotImageActivity) {
-            activity = (SpotImageActivity) context;
+        if (context != null && context instanceof Activity) {
+            activity = (Activity) context;
         }
-    }
 
-    public void setLocation(int x, int y) {
-        oldX = x;
-        oldY = y;
+        DisplayMetrics metrics = new DisplayMetrics();
+        activity.getWindowManager().getDefaultDisplay().getMetrics(metrics);
+        myToll = metrics.heightPixels / 2;
     }
 
     public void setScaleTarget(View view) {
@@ -56,17 +55,7 @@ public class SIRelativeLayout extends RelativeLayout {
     }
 
     public void exit(boolean scaleFlag) {
-        target.animate().alpha(0).setDuration(180).start();
-
-        if (scaleFlag) {
-            int[] mylocation = new int[2];
-            this.getLocationOnScreen(mylocation);
-//            Log.d(TAG, "exit: mylocation x:" + mylocation[0] + " , y:" + mylocation[1]);
-            int ydiff = mylocation[1] - oldY;
-            int currentTransY = (int) getTranslationY();
-            ViewPropertyAnimator viewPropertyAnimator = this.animate().translationY(currentTransY - ydiff).setDuration(EXIT_TIME);
-            viewPropertyAnimator.start();
-        }
+        target.animate().alpha(0).setDuration(EXIT_TIME).start();
 
         ViewPropertyAnimator viewPropertyAnimator = this.animate().alpha(0).setDuration(EXIT_TIME);
         viewPropertyAnimator.setListener(new Animator.AnimatorListener() {
@@ -99,10 +88,9 @@ public class SIRelativeLayout extends RelativeLayout {
     public boolean onInterceptTouchEvent(MotionEvent event) {
         int action = event.getAction() & MotionEvent.ACTION_MASK;
         int touchCount = event.getPointerCount();
-//        Log.d(TAG, "onInterceptTouchEvent: ev:" + event.getAction() + ", action:" + action + ", y:" + event.getY() + ", touchCount:" + touchCount +", mode:"+target.getPinchMode());
-
-        if (target.getPinchMode() == PinchImageView.PINCH_MODE_SCROLL) {
+        if (target.getPinchMode() == PinchImageView.PINCH_MODE_SCROLL || touchCount > 1) {
             startY = -1;
+            this.setAlpha(1);
             return false;
         }
 
@@ -127,7 +115,6 @@ public class SIRelativeLayout extends RelativeLayout {
 
             float viewAlpha = alp < 0.5f ? 0.5f : alp;
             this.setAlpha(viewAlpha);
-//            Log.d(TAG, "onTouch: movment:" + movement + ", alp:" + alp);
             target.setTranslationY(movement);
 
 
@@ -135,7 +122,6 @@ public class SIRelativeLayout extends RelativeLayout {
                 if (alp < 0.5f) {
                     exit(false);
                 } else {
-                    float lastY = event.getY();
                     target.animate().translationY(0).alpha(1).setDuration(200).start();
                     this.animate().alpha(1).setDuration(200).start();
                 }
@@ -148,7 +134,6 @@ public class SIRelativeLayout extends RelativeLayout {
     public boolean onTouchEvent(MotionEvent event) {
         int action = event.getAction() & MotionEvent.ACTION_MASK;
         int touchCount = event.getPointerCount();
-        Log.d(TAG, "onTouchEvent: ev:" + event.getAction() + ", action:" + action + ", y:" + event.getY() + ", touchCount:" + touchCount);
 
         return false;
     }

@@ -17,23 +17,6 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Queue;
 
-import android.animation.ValueAnimator;
-import android.content.Context;
-import android.graphics.Canvas;
-import android.graphics.Matrix;
-import android.graphics.PointF;
-import android.graphics.RectF;
-import android.util.AttributeSet;
-import android.util.Log;
-import android.view.GestureDetector;
-import android.view.MotionEvent;
-import android.view.View;
-
-import java.util.ArrayList;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Queue;
-
 /**
  * 手势图片控件
  *
@@ -816,12 +799,13 @@ public class PinchImageView extends android.support.v7.widget.AppCompatImageView
 
         public boolean onSingleTapConfirmed(MotionEvent e) {
 //            Log.d(TAG, "onSingleTapConfirmed: .....");
-            exit();
+//            exit();
             return true;
         }
     });
 
     private void exit() {
+        Log.d(TAG, "exit: ....", new RuntimeException("sssss"));
         View parent = (View) getParent();
         if(parent!=null && parent instanceof SIRelativeLayout){
             SIRelativeLayout siRl = (SIRelativeLayout) parent;
@@ -836,10 +820,6 @@ public class PinchImageView extends android.support.v7.widget.AppCompatImageView
     public boolean onTouchEvent(MotionEvent event) {
         int touchCount = event.getPointerCount();
         int action = event.getAction() & MotionEvent.ACTION_MASK;
-//        Log.d(TAG, "onTouchEvent: ev:" + event.getAction() + ", action:" + action + ", y:" + event.getY() + ", touchCount:" + touchCount + ", mPinchMode:" + mPinchMode);
-//        if (action == MotionEvent.ACTION_DOWN && touchCount<2) {
-//            return true;
-//        }
 
         super.onTouchEvent(event);
 
@@ -848,9 +828,9 @@ public class PinchImageView extends android.support.v7.widget.AppCompatImageView
         if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
             if (action == MotionEvent.ACTION_UP) {
                 long now = System.currentTimeMillis();
-//                if (now - downTime < 180) {
-//                    exit();
-//                }
+                if (now - downTime < 180) {
+                    exit();
+                }
             }
 
             //如果之前是缩放模式,还需要触发一下缩放结束动画
@@ -1178,9 +1158,11 @@ public class PinchImageView extends android.support.v7.widget.AppCompatImageView
         if (outerScale * scalePost < 1f) {
             scalePost = 1f / outerScale;
         }
-//        if (outerScale * scalePost > 1f) {
-//            scalePost = 1f / outerScale;
-//        }
+
+        // 如果需要双手放大后, 保持图片不回弹变小, 需要注释掉下面的if语句
+        if (outerScale * scalePost > 1f) {
+            scalePost = 1f / outerScale;
+        }
         //如果缩放修正不为1，说明进行了修正
         if (scalePost != 1f) {
             change = true;
@@ -1212,7 +1194,7 @@ public class PinchImageView extends android.support.v7.widget.AppCompatImageView
         }
 //        Log.d(TAG, "scaleEnd: change:" + change + ", scalePost:" + scalePost);
         //只有有执行修正才执行动画
-        if (change && scalePost > 1) {
+        if (change ) {
             //计算结束矩阵
             Matrix animEnd = MathUtils.matrixTake(mOuterMatrix);
             animEnd.postScale(scalePost, scalePost, mLastMovePoint.x, mLastMovePoint.y);

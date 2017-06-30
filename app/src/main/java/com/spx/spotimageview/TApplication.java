@@ -16,6 +16,8 @@ public class TApplication extends Application {
     }
 
     public Bitmap getSpotImageBitmap(){
-        return spotImageBitmap;
+        Bitmap bitmap = spotImageBitmap;
+        spotImageBitmap = null;
+        return bitmap;
     }
 }

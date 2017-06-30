@@ -26,7 +26,6 @@ public class SpotImageActivity extends Activity {
         attributes.windowAnimations = -1;
         getWindow().setAttributes(attributes);
         setContentView(R.layout.spot_image_activity_layout);
-//        byte[] data = getIntent().getByteArrayExtra("bitmap");
 
         Bitmap bitmap =  ((TApplication)getApplication()).getSpotImageBitmap();
 
