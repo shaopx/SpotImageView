@@ -11,17 +11,13 @@ import android.graphics.RectF;
 import android.util.AttributeSet;
 import android.util.DisplayMetrics;
 import android.util.Log;
-import android.view.GestureDetector;
 import android.view.MotionEvent;
 import android.view.VelocityTracker;
-import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewParent;
 import android.view.ViewPropertyAnimator;
 
-import java.util.ArrayList;
 import java.util.LinkedList;
-import java.util.List;
 import java.util.Queue;
 
 /**
@@ -36,6 +32,8 @@ public class PinchImageView extends android.support.v7.widget.AppCompatImageView
     private float startY;
     private long downTime;
     private VelocityTracker vTracker = null;
+    float lastRawY = 0f;
+    float startRawY = 0f;
 
     ////////////////////////////////配置参数////////////////////////////////
 
@@ -54,16 +52,6 @@ public class PinchImageView extends android.support.v7.widget.AppCompatImageView
      */
     private static final float MAX_SCALE = 4f;
     private static final String TAG = "PinchImageView";
-
-
-    ////////////////////////////////监听器////////////////////////////////
-
-    /**
-     * 外界点击事件
-     *
-     * @see #setOnClickListener(OnClickListener)
-     */
-    private OnClickListener mOnClickListener;
 
 
     ////////////////////////////////公共状态获取////////////////////////////////
@@ -93,9 +81,6 @@ public class PinchImageView extends android.support.v7.widget.AppCompatImageView
 
     /**
      * 外层变换矩阵，如果是单位矩阵，那么图片是fit center状态
-     *
-     * @see #getOuterMatrix(Matrix)
-     * @see #outerMatrixTo(Matrix, long)
      */
     private Matrix mOuterMatrix = new Matrix();
 
@@ -119,23 +104,6 @@ public class PinchImageView extends android.support.v7.widget.AppCompatImageView
     private int halfWindowHeight;
     private boolean isFlingout = false;
 
-    /**
-     * 获取外部变换矩阵.
-     * <p>
-     * 外部变换矩阵记录了图片手势操作的最终结果,是相对于图片fit center状态的变换.
-     * 默认值为单位矩阵,此时图片为fit center状态.
-     *
-     * @param matrix 用于填充结果的对象
-     * @return 如果传了matrix参数则将matrix填充后返回, 否则new一个填充返回
-     */
-    public Matrix getOuterMatrix(Matrix matrix) {
-        if (matrix == null) {
-            matrix = new Matrix(mOuterMatrix);
-        } else {
-            matrix.set(mOuterMatrix);
-        }
-        return matrix;
-    }
 
     /**
      * 获取内部变换矩阵.
@@ -174,8 +142,6 @@ public class PinchImageView extends android.support.v7.widget.AppCompatImageView
      *
      * @param matrix 用于填充结果的对象
      * @return 如果传了matrix参数则将matrix填充后返回, 否则new一个填充返回
-     * @see #getOuterMatrix(Matrix)
-     * @see #getInnerMatrix(Matrix)
      */
     public Matrix getCurrentImageMatrix(Matrix matrix) {
         //获取内部变换矩阵
@@ -240,88 +206,9 @@ public class PinchImageView extends android.support.v7.widget.AppCompatImageView
         return mPinchMode;
     }
 
-    /**
-     * 与ViewPager结合的时候使用
-     *
-     * @param direction
-     * @return
-     */
-    @Override
-    public boolean canScrollHorizontally(int direction) {
-        if (mPinchMode == PinchImageView.PINCH_MODE_SCALE) {
-            return true;
-        }
-        RectF bound = getImageBound(null);
-        if (bound == null) {
-            return false;
-        }
-        if (bound.isEmpty()) {
-            return false;
-        }
-        if (direction > 0) {
-            return bound.right > getWidth();
-        } else {
-            return bound.left < 0;
-        }
-    }
-
-    /**
-     * 与ViewPager结合的时候使用
-     *
-     * @param direction
-     * @return
-     */
-    @Override
-    public boolean canScrollVertically(int direction) {
-        if (mPinchMode == PinchImageView.PINCH_MODE_SCALE) {
-            return true;
-        }
-        RectF bound = getImageBound(null);
-        if (bound == null) {
-            return false;
-        }
-        if (bound.isEmpty()) {
-            return false;
-        }
-        if (direction > 0) {
-            return bound.bottom > getHeight();
-        } else {
-            return bound.top < 0;
-        }
-    }
-
 
     ////////////////////////////////公共状态设置////////////////////////////////
 
-    /**
-     * 执行当前outerMatrix到指定outerMatrix渐变的动画
-     * <p>
-     * 调用此方法会停止正在进行中的手势以及手势动画.
-     * 当duration为0时,outerMatrix值会被立即设置而不会启动动画.
-     *
-     * @param endMatrix 动画目标矩阵
-     * @param duration  动画持续时间
-     * @see #getOuterMatrix(Matrix)
-     */
-    public void outerMatrixTo(Matrix endMatrix, long duration) {
-        if (endMatrix == null) {
-            return;
-        }
-        //将手势设置为PINCH_MODE_FREE将停止后续手势的触发
-        mPinchMode = PINCH_MODE_FREE;
-        //停止所有正在进行的动画
-        cancelAllAnimator();
-        //如果时间不合法立即执行结果
-        if (duration <= 0) {
-            mOuterMatrix.set(endMatrix);
-            dispatchOuterMatrixChanged();
-            invalidate();
-        } else {
-            //创建矩阵变化动画
-            mScaleAnimator = new ScaleAnimator(mOuterMatrix, endMatrix, duration);
-            mScaleAnimator.start();
-        }
-    }
 
     /**
      * 执行当前mask到指定mask的变化动画
@@ -366,7 +253,7 @@ public class PinchImageView extends android.support.v7.widget.AppCompatImageView
     public void reset() {
         //重置位置到fit
         mOuterMatrix.reset();
-        dispatchOuterMatrixChanged();
+//        dispatchOuterMatrixChanged();
         //清空mask
         mMask = null;
         //停止所有手势
@@ -385,144 +272,6 @@ public class PinchImageView extends android.support.v7.widget.AppCompatImageView
     }
 
 
-    ////////////////////////////////对外广播事件////////////////////////////////
-
-    /**
-     * 外部矩阵变化事件通知监听器
-     */
-    public interface OuterMatrixChangedListener {
-
-        /**
-         * 外部矩阵变化回调
-         * <p>
-         * 外部矩阵的任何变化后都收到此回调.
-         * 外部矩阵变化后,总变化矩阵,图片的展示位置都将发生变化.
-         *
-         * @param pinchImageView
-         * @see #getOuterMatrix(Matrix)
-         * @see #getCurrentImageMatrix(Matrix)
-         * @see #getImageBound(RectF)
-         */
-        void onOuterMatrixChanged(PinchImageView pinchImageView);
-    }
-
-    /**
-     * 所有OuterMatrixChangedListener监听列表
-     *
-     * @see #addOuterMatrixChangedListener(OuterMatrixChangedListener)
-     * @see #removeOuterMatrixChangedListener(OuterMatrixChangedListener)
-     */
-    private List<OuterMatrixChangedListener> mOuterMatrixChangedListeners;
-
-    /**
-     * 当mOuterMatrixChangedListeners被锁定不允许修改时,临时将修改写到这个副本中
-     *
-     * @see #mOuterMatrixChangedListeners
-     */
-    private List<OuterMatrixChangedListener> mOuterMatrixChangedListenersCopy;
-
-    /**
-     * mOuterMatrixChangedListeners的修改锁定
-     * <p>
-     * 当进入dispatchOuterMatrixChanged方法时,被加1,退出前被减1
-     *
-     * @see #dispatchOuterMatrixChanged()
-     * @see #addOuterMatrixChangedListener(OuterMatrixChangedListener)
-     * @see #removeOuterMatrixChangedListener(OuterMatrixChangedListener)
-     */
-    private int mDispatchOuterMatrixChangedLock;
-
-    /**
-     * 添加外部矩阵变化监听
-     *
-     * @param listener
-     */
-    public void addOuterMatrixChangedListener(OuterMatrixChangedListener listener) {
-        if (listener == null) {
-            return;
-        }
-        //如果监听列表没有被修改锁定直接将监听添加到监听列表
-        if (mDispatchOuterMatrixChangedLock == 0) {
-            if (mOuterMatrixChangedListeners == null) {
-                mOuterMatrixChangedListeners = new ArrayList<OuterMatrixChangedListener>();
-            }
-            mOuterMatrixChangedListeners.add(listener);
-        } else {
-            //如果监听列表修改被锁定,那么尝试在监听列表副本上添加
-            //监听列表副本将会在锁定被解除时替换到监听列表里
-            if (mOuterMatrixChangedListenersCopy == null) {
-                if (mOuterMatrixChangedListeners != null) {
-                    mOuterMatrixChangedListenersCopy = new ArrayList<OuterMatrixChangedListener>(mOuterMatrixChangedListeners);
-                } else {
-                    mOuterMatrixChangedListenersCopy = new ArrayList<OuterMatrixChangedListener>();
-                }
-            }
-            mOuterMatrixChangedListenersCopy.add(listener);
-        }
-    }
-
-    /**
-     * 删除外部矩阵变化监听
-     *
-     * @param listener
-     */
-    public void removeOuterMatrixChangedListener(OuterMatrixChangedListener listener) {
-        if (listener == null) {
-            return;
-        }
-        //如果监听列表没有被修改锁定直接在监听列表数据结构上修改
-        if (mDispatchOuterMatrixChangedLock == 0) {
-            if (mOuterMatrixChangedListeners != null) {
-                mOuterMatrixChangedListeners.remove(listener);
-            }
-        } else {
-            //如果监听列表被修改锁定,那么就在其副本上修改
-            //其副本将会在锁定解除时替换回监听列表
-            if (mOuterMatrixChangedListenersCopy == null) {
-                if (mOuterMatrixChangedListeners != null) {
-                    mOuterMatrixChangedListenersCopy = new ArrayList<OuterMatrixChangedListener>(mOuterMatrixChangedListeners);
-                }
-            }
-            if (mOuterMatrixChangedListenersCopy != null) {
-                mOuterMatrixChangedListenersCopy.remove(listener);
-            }
-        }
-    }
-
-    /**
-     * 触发外部矩阵修改事件
-     * <p>
-     * 需要在每次给外部矩阵设置值时都调用此方法.
-     *
-     * @see #mOuterMatrix
-     */
-    private void dispatchOuterMatrixChanged() {
-        if (mOuterMatrixChangedListeners == null) {
-            return;
-        }
-        //增加锁
-        //这里之所以用计数器做锁定是因为可能在锁定期间又间接调用了此方法产生递归
-        //使用boolean无法判断递归结束
-        mDispatchOuterMatrixChangedLock++;
-        //在列表循环过程中不允许修改列表,否则将引发崩溃
-        for (OuterMatrixChangedListener listener : mOuterMatrixChangedListeners) {
-            listener.onOuterMatrixChanged(this);
-        }
-        //减锁
-        mDispatchOuterMatrixChangedLock--;
-        //如果是递归的情况,mDispatchOuterMatrixChangedLock可能大于1,只有减到0才能算列表的锁定解除
-        if (mDispatchOuterMatrixChangedLock == 0) {
-            //如果期间有修改列表,那么副本将不为null
-            if (mOuterMatrixChangedListenersCopy != null) {
-                //将副本替换掉正式的列表
-                mOuterMatrixChangedListeners = mOuterMatrixChangedListenersCopy;
-                //清空副本
-                mOuterMatrixChangedListenersCopy = null;
-            }
-        }
-    }
-
-
     ////////////////////////////////用于重载定制////////////////////////////////
 
     /**
@@ -535,31 +284,9 @@ public class PinchImageView extends android.support.v7.widget.AppCompatImageView
      *
      * @return 缩放比例
      * @see #scaleEnd()
-     * @see #doubleTap(float, float)
      */
     protected float getMaxScale() {
         return MAX_SCALE;
-    }
-
-    /**
-     * 计算双击之后图片接下来应该被缩放的比例
-     * <p>
-     * 如果值大于getMaxScale或者小于fit center尺寸，则实际使用取边界值.
-     * 通过覆盖此方法可以定制不同的图片被双击时使用不同的放大策略.
-     *
-     * @param innerScale 当前内部矩阵的缩放值
-     * @param outerScale 当前外部矩阵的缩放值
-     * @return 接下来的缩放比例
-     * @see #doubleTap(float, float)
-     * @see #getMaxScale()
-     */
-    protected float calculateNextScale(float innerScale, float outerScale) {
-        float currentScale = innerScale * outerScale;
-        if (currentScale < MAX_SCALE) {
-            return MAX_SCALE;
-        } else {
-            return innerScale;
-        }
     }
 
 
@@ -757,8 +484,6 @@ public class PinchImageView extends android.support.v7.widget.AppCompatImageView
      * 手动调用outerMatrixTo触发.
      *
      * @see #scaleEnd()
-     * @see #doubleTap(float, float)
-     * @see #outerMatrixTo(Matrix, long)
      */
     private ScaleAnimator mScaleAnimator;
 
@@ -935,10 +660,6 @@ public class PinchImageView extends android.support.v7.widget.AppCompatImageView
                     float yM = event.getY() - mLastMovePoint.y;
                     Log.d(TAG, "onTouchEvent: .... moving...yM:" + yM + ", yVelocity:" + yVelocity);
 
-                    if (yVelocity > 60 && !isFlingout) {
-                        flingOut(yVelocity);
-                        return false;
-                    }
                     //每次移动产生一个差值累积到图片位置上
 //                    scrollBy(xM, yM);
                     //记录新的移动点
@@ -947,6 +668,12 @@ public class PinchImageView extends android.support.v7.widget.AppCompatImageView
                     float rawY = event.getRawY();
 
                     float v = rawY - lastRawY;
+
+                    if (yVelocity > 320 && !isFlingout) {
+                        flingOut(v > 0, yVelocity);
+                        return false;
+                    }
+
                     setTranslationY(getTranslationY() + v);
 
                     lastRawY = rawY;
@@ -969,11 +696,11 @@ public class PinchImageView extends android.support.v7.widget.AppCompatImageView
 
     ViewPropertyAnimator viewPropertyAnimator = null;
 
-    private void flingOut(float speed) {
+    private void flingOut(boolean down, float speed) {
         isFlingout = true;
         Log.d(TAG, "flingOut: .....transY:" + getTranslationY() + ", isFlingout:" + isFlingout);
 
-        ValueAnimator valueAnimator = ValueAnimator.ofFloat(getTranslationY(), -2000);
+        ValueAnimator valueAnimator = ValueAnimator.ofFloat(getTranslationY(), down ? 2000 : -2000);
         float distance = 2000 - Math.abs(getTranslationY());
         int duration = (int) (distance / Math.abs(speed) * 100);
         Log.d(TAG, "flingOut: duration:" + duration);
@@ -982,7 +709,7 @@ public class PinchImageView extends android.support.v7.widget.AppCompatImageView
             @Override
             public void onAnimationUpdate(ValueAnimator animation) {
                 Float animatedValue = (Float) animation.getAnimatedValue();
-                Log.d(TAG, "flingOut  onAnimationUpdate: animatedValue:"+animatedValue);
+                //Log.d(TAG, "flingOut  onAnimationUpdate: animatedValue:" + animatedValue);
                 setTranslationY(animatedValue);
             }
         });
@@ -1000,7 +727,7 @@ public class PinchImageView extends android.support.v7.widget.AppCompatImageView
                     activity.overridePendingTransition(R.anim.fade_in, R.anim.fade_out);
                 }
                 isFlingout = false;
-                Log.d(TAG, "flingOut.onAnimationEnd: .....isFlingout:" + isFlingout + ", transY:" + getTranslationY());
+               // Log.d(TAG, "flingOut.onAnimationEnd: .....isFlingout:" + isFlingout + ", transY:" + getTranslationY());
             }
 
             @Override
@@ -1064,8 +791,6 @@ public class PinchImageView extends android.support.v7.widget.AppCompatImageView
         }
     }
 
-    float lastRawY = 0f;
-    float startRawY = 0f;
 
     private void animateBack() {
         animate().translationY(0).setDuration(180).start();
@@ -1131,7 +856,7 @@ public class PinchImageView extends android.support.v7.widget.AppCompatImageView
         MathUtils.rectFGiven(bound);
         //应用移动变换
         mOuterMatrix.postTranslate(xDiff, yDiff);
-        dispatchOuterMatrixChanged();
+//        dispatchOuterMatrixChanged();
         //触发重绘
         invalidate();
         //检查是否有变化
@@ -1191,89 +916,11 @@ public class PinchImageView extends android.support.v7.widget.AppCompatImageView
         //应用变换
         mOuterMatrix.set(matrix);
         MathUtils.matrixGiven(matrix);
-        dispatchOuterMatrixChanged();
+//        dispatchOuterMatrixChanged();
         //重绘
         invalidate();
     }
 
-    /**
-     * 双击后放大或者缩小
-     * <p>
-     * 将图片缩放比例缩放到nextScale指定的值.
-     * 但nextScale值不能大于最大缩放值不能小于fit center情况下的缩放值.
-     * 将双击的点尽量移动到控件中心.
-     *
-     * @param x 双击的点
-     * @param y 双击的点
-     * @see #calculateNextScale(float, float)
-     * @see #getMaxScale()
-     */
-    private void doubleTap(float x, float y) {
-        if (!isReady()) {
-            return;
-        }
-        //获取第一层变换矩阵
-        Matrix innerMatrix = MathUtils.matrixTake();
-        getInnerMatrix(innerMatrix);
-        //当前总的缩放比例
-        float innerScale = MathUtils.getMatrixScale(innerMatrix)[0];
-        float outerScale = MathUtils.getMatrixScale(mOuterMatrix)[0];
-        float currentScale = innerScale * outerScale;
-        //控件大小
-        float displayWidth = getWidth();
-        float displayHeight = getHeight();
-        //最大放大大小
-        float maxScale = getMaxScale();
-        //接下来要放大的大小
-        float nextScale = calculateNextScale(innerScale, outerScale);
-        //如果接下来放大大于最大值或者小于fit center值，则取边界
-        if (nextScale > maxScale) {
-            nextScale = maxScale;
-        }
-        if (nextScale < innerScale) {
-            nextScale = innerScale;
-        }
-        //开始计算缩放动画的结果矩阵
-        Matrix animEnd = MathUtils.matrixTake(mOuterMatrix);
-        //计算还需缩放的倍数
-        animEnd.postScale(nextScale / currentScale, nextScale / currentScale, x, y);
-        //将放大点移动到控件中心
-        animEnd.postTranslate(displayWidth / 2f - x, displayHeight / 2f - y);
-        //得到放大之后的图片方框
-        Matrix testMatrix = MathUtils.matrixTake(innerMatrix);
-        testMatrix.postConcat(animEnd);
-        RectF testBound = MathUtils.rectFTake(0, 0, getDrawable().getIntrinsicWidth(), getDrawable().getIntrinsicHeight());
-        testMatrix.mapRect(testBound);
-        //修正位置
-        float postX = 0;
-        float postY = 0;
-        if (testBound.right - testBound.left < displayWidth) {
-            postX = displayWidth / 2f - (testBound.right + testBound.left) / 2f;
-        } else if (testBound.left > 0) {
-            postX = -testBound.left;
-        } else if (testBound.right < displayWidth) {
-            postX = displayWidth - testBound.right;
-        }
-        if (testBound.bottom - testBound.top < displayHeight) {
-            postY = displayHeight / 2f - (testBound.bottom + testBound.top) / 2f;
-        } else if (testBound.top > 0) {
-            postY = -testBound.top;
-        } else if (testBound.bottom < displayHeight) {
-            postY = displayHeight - testBound.bottom;
-        }
-        //应用修正位置
-        animEnd.postTranslate(postX, postY);
-        //清理当前可能正在执行的动画
-        cancelAllAnimator();
-        //启动矩阵动画
-        mScaleAnimator = new ScaleAnimator(mOuterMatrix, animEnd);
-        mScaleAnimator.start();
-        //清理临时变量
-        MathUtils.rectFGiven(testBound);
-        MathUtils.matrixGiven(testMatrix);
-        MathUtils.matrixGiven(animEnd);
-        MathUtils.matrixGiven(innerMatrix);
-    }
 
     /**
      * 当缩放操作结束动画
@@ -1516,7 +1163,7 @@ public class PinchImageView extends android.support.v7.widget.AppCompatImageView
             }
             //设置矩阵并重绘
             mOuterMatrix.setValues(mResult);
-            dispatchOuterMatrixChanged();
+//            dispatchOuterMatrixChanged();
             invalidate();
         }
     }
@@ -1798,155 +1445,5 @@ public class PinchImageView extends android.support.v7.widget.AppCompatImageView
             }
         }
 
-        /**
-         * 计算两个矩形之间的变换矩阵
-         * <p>
-         * unknownMatrix.mapRect(to, from)
-         * 已知from矩形和to矩形,求unknownMatrix
-         *
-         * @param from
-         * @param to
-         * @param result unknownMatrix
-         */
-        public static void calculateRectTranslateMatrix(RectF from, RectF to, Matrix result) {
-            if (from == null || to == null || result == null) {
-                return;
-            }
-            if (from.width() == 0 || from.height() == 0) {
-                return;
-            }
-            result.reset();
-            result.postTranslate(-from.left, -from.top);
-            result.postScale(to.width() / from.width(), to.height() / from.height());
-            result.postTranslate(to.left, to.top);
-        }
-
-        /**
-         * 计算图片在某个ImageView中的显示矩形
-         *
-         * @param container ImageView的Rect
-         * @param srcWidth  图片的宽度
-         * @param srcHeight 图片的高度
-         * @param scaleType 图片在ImageView中的ScaleType
-         * @param result    图片应该在ImageView中展示的矩形
-         */
-        public static void calculateScaledRectInContainer(RectF container, float srcWidth, float srcHeight, ScaleType scaleType, RectF result) {
-            if (container == null || result == null) {
-                return;
-            }
-            if (srcWidth == 0 || srcHeight == 0) {
-                return;
-            }
-            //默认scaleType为fit center
-            if (scaleType == null) {
-                scaleType = ScaleType.FIT_CENTER;
-            }
-            result.setEmpty();
-            if (ScaleType.FIT_XY.equals(scaleType)) {
-                result.set(container);
-            } else if (ScaleType.CENTER.equals(scaleType)) {
-                Matrix matrix = matrixTake();
-                RectF rect = rectFTake(0, 0, srcWidth, srcHeight);
-                matrix.setTranslate((container.width() - srcWidth) * 0.5f, (container.height() - srcHeight) * 0.5f);
-                matrix.mapRect(result, rect);
-                rectFGiven(rect);
-                matrixGiven(matrix);
-                result.left += container.left;
-                result.right += container.left;
-                result.top += container.top;
-                result.bottom += container.top;
-            } else if (ScaleType.CENTER_CROP.equals(scaleType)) {
-                Matrix matrix = matrixTake();
-                RectF rect = rectFTake(0, 0, srcWidth, srcHeight);
-                float scale;
-                float dx = 0;
-                float dy = 0;
-                if (srcWidth * container.height() > container.width() * srcHeight) {
-                    scale = container.height() / srcHeight;
-                    dx = (container.width() - srcWidth * scale) * 0.5f;
-                } else {
-                    scale = container.width() / srcWidth;
-                    dy = (container.height() - srcHeight * scale) * 0.5f;
-                }
-                matrix.setScale(scale, scale);
-                matrix.postTranslate(dx, dy);
-                matrix.mapRect(result, rect);
-                rectFGiven(rect);
-                matrixGiven(matrix);
-                result.left += container.left;
-                result.right += container.left;
-                result.top += container.top;
-                result.bottom += container.top;
-            } else if (ScaleType.CENTER_INSIDE.equals(scaleType)) {
-                Matrix matrix = matrixTake();
-                RectF rect = rectFTake(0, 0, srcWidth, srcHeight);
-                float scale;
-                float dx;
-                float dy;
-                if (srcWidth <= container.width() && srcHeight <= container.height()) {
-                    scale = 1f;
-                } else {
-                    scale = Math.min(container.width() / srcWidth, container.height() / srcHeight);
-                }
-                dx = (container.width() - srcWidth * scale) * 0.5f;
-                dy = (container.height() - srcHeight * scale) * 0.5f;
-                matrix.setScale(scale, scale);
-                matrix.postTranslate(dx, dy);
-                matrix.mapRect(result, rect);
-                rectFGiven(rect);
-                matrixGiven(matrix);
-                result.left += container.left;
-                result.right += container.left;
-                result.top += container.top;
-                result.bottom += container.top;
-            } else if (ScaleType.FIT_CENTER.equals(scaleType)) {
-                Matrix matrix = matrixTake();
-                RectF rect = rectFTake(0, 0, srcWidth, srcHeight);
-                RectF tempSrc = rectFTake(0, 0, srcWidth, srcHeight);
-                RectF tempDst = rectFTake(0, 0, container.width(), container.height());
-                matrix.setRectToRect(tempSrc, tempDst, Matrix.ScaleToFit.CENTER);
-                matrix.mapRect(result, rect);
-                rectFGiven(tempDst);
-                rectFGiven(tempSrc);
-                rectFGiven(rect);
-                matrixGiven(matrix);
-                result.left += container.left;
-                result.right += container.left;
-                result.top += container.top;
-                result.bottom += container.top;
-            } else if (ScaleType.FIT_START.equals(scaleType)) {
-                Matrix matrix = matrixTake();
-                RectF rect = rectFTake(0, 0, srcWidth, srcHeight);
-                RectF tempSrc = rectFTake(0, 0, srcWidth, srcHeight);
-                RectF tempDst = rectFTake(0, 0, container.width(), container.height());
-                matrix.setRectToRect(tempSrc, tempDst, Matrix.ScaleToFit.START);
-                matrix.mapRect(result, rect);
-                rectFGiven(tempDst);
-                rectFGiven(tempSrc);
-                rectFGiven(rect);
-                matrixGiven(matrix);
-                result.left += container.left;
-                result.right += container.left;
-                result.top += container.top;
-                result.bottom += container.top;
-            } else if (ScaleType.FIT_END.equals(scaleType)) {
-                Matrix matrix = matrixTake();
-                RectF rect = rectFTake(0, 0, srcWidth, srcHeight);
-                RectF tempSrc = rectFTake(0, 0, srcWidth, srcHeight);
-                RectF tempDst = rectFTake(0, 0, container.width(), container.height());
-                matrix.setRectToRect(tempSrc, tempDst, Matrix.ScaleToFit.END);
-                matrix.mapRect(result, rect);
-                rectFGiven(tempDst);
-                rectFGiven(tempSrc);
-                rectFGiven(rect);
-                matrixGiven(matrix);
-                result.left += container.left;
-                result.right += container.left;
-                result.top += container.top;
-                result.bottom += container.top;
-            } else {
-                result.set(container);
-            }
-        }
     }
 }
