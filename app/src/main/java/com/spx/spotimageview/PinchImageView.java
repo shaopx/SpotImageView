@@ -1,16 +1,23 @@
 package com.spx.spotimageview;
 
+import android.animation.Animator;
 import android.animation.ValueAnimator;
+import android.app.Activity;
 import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Matrix;
 import android.graphics.PointF;
 import android.graphics.RectF;
 import android.util.AttributeSet;
+import android.util.DisplayMetrics;
 import android.util.Log;
 import android.view.GestureDetector;
 import android.view.MotionEvent;
+import android.view.VelocityTracker;
 import android.view.View;
+import android.view.ViewGroup;
+import android.view.ViewParent;
+import android.view.ViewPropertyAnimator;
 
 import java.util.ArrayList;
 import java.util.LinkedList;
@@ -23,6 +30,12 @@ import java.util.Queue;
  * @author clifford
  */
 public class PinchImageView extends android.support.v7.widget.AppCompatImageView {
+
+    private static final long EXIT_TIME = 200;
+    private Activity activity;
+    private float startY;
+    private long downTime;
+    private VelocityTracker vTracker = null;
 
     ////////////////////////////////配置参数////////////////////////////////
 
@@ -52,25 +65,6 @@ public class PinchImageView extends android.support.v7.widget.AppCompatImageView
      */
     private OnClickListener mOnClickListener;
 
-    /**
-     * 外界长按事件
-     *
-     * @see #setOnLongClickListener(OnLongClickListener)
-     */
-    private OnLongClickListener mOnLongClickListener;
-
-    @Override
-    public void setOnClickListener(OnClickListener l) {
-        //默认的click会在任何点击情况下都会触发，所以搞成自己的
-        mOnClickListener = l;
-    }
-
-    @Override
-    public void setOnLongClickListener(OnLongClickListener l) {
-        //默认的long click会在任何长按情况下都会触发，所以搞成自己的
-        mOnLongClickListener = l;
-    }
-
 
     ////////////////////////////////公共状态获取////////////////////////////////
 
@@ -94,6 +88,8 @@ public class PinchImageView extends android.support.v7.widget.AppCompatImageView
      * @see #getPinchMode()
      */
     public static final int PINCH_MODE_SCALE = 2;
+
+    public static final int DRAG_MODE_SCROLL = 3;
 
     /**
      * 外层变换矩阵，如果是单位矩阵，那么图片是fit center状态
@@ -120,6 +116,8 @@ public class PinchImageView extends android.support.v7.widget.AppCompatImageView
      * @see #PINCH_MODE_SCALE
      */
     public int mPinchMode = PINCH_MODE_FREE;
+    private int halfWindowHeight;
+    private boolean isFlingout = false;
 
     /**
      * 获取外部变换矩阵.
@@ -568,23 +566,29 @@ public class PinchImageView extends android.support.v7.widget.AppCompatImageView
     ////////////////////////////////初始化////////////////////////////////
 
     public PinchImageView(Context context) {
-        super(context);
-        initView();
+        this(context, null);
     }
 
     public PinchImageView(Context context, AttributeSet attrs) {
-        super(context, attrs);
-        initView();
+        this(context, attrs, 0);
     }
 
     public PinchImageView(Context context, AttributeSet attrs, int defStyle) {
         super(context, attrs, defStyle);
-        initView();
+        initView(context);
     }
 
-    private void initView() {
+    private void initView(Context context) {
         //强制设置图片scaleType为matrix
         super.setScaleType(ScaleType.MATRIX);
+
+        if (context instanceof Activity) {
+            activity = (Activity) context;
+
+            DisplayMetrics metrics = new DisplayMetrics();
+            activity.getWindowManager().getDefaultDisplay().getMetrics(metrics);
+            halfWindowHeight = metrics.heightPixels / 2;
+        }
     }
 
     //不允许设置scaleType，只能用内部设置的matrix
@@ -765,72 +769,71 @@ public class PinchImageView extends android.support.v7.widget.AppCompatImageView
      */
     private FlingAnimator mFlingAnimator;
 
-    /**
-     * 常用手势处理
-     * <p>
-     * 在onTouchEvent末尾被执行.
-     */
-    private GestureDetector mGestureDetector = new GestureDetector(PinchImageView.this.getContext(), new GestureDetector.SimpleOnGestureListener() {
-
-        public boolean onFling(MotionEvent e1, MotionEvent e2, float velocityX, float velocityY) {
-            Log.d(TAG, "onDoubleTap: .....");
-            //只有在单指模式结束之后才允许执行fling
-            if (mPinchMode == PINCH_MODE_FREE && !(mScaleAnimator != null && mScaleAnimator.isRunning())) {
-                fling(velocityX, velocityY);
-            }
-            return true;
-        }
-
-        public void onLongPress(MotionEvent e) {
-            //触发长按
-            if (mOnLongClickListener != null) {
-                mOnLongClickListener.onLongClick(PinchImageView.this);
-            }
-        }
-
-        public boolean onDoubleTap(MotionEvent e) {
-//            Log.d(TAG, "onDoubleTap: .....");
-            //当手指快速第二次按下触发,此时必须是单指模式才允许执行doubleTap
-            if (mPinchMode == PINCH_MODE_SCROLL && !(mScaleAnimator != null && mScaleAnimator.isRunning())) {
-                doubleTap(e.getX(), e.getY());
-            }
-            return true;
-        }
-
-        public boolean onSingleTapConfirmed(MotionEvent e) {
-//            Log.d(TAG, "onSingleTapConfirmed: .....");
-//            exit();
-            return true;
-        }
-    });
 
     private void exit() {
-        View parent = (View) getParent();
-        if(parent!=null && parent instanceof SIRelativeLayout){
-            SIRelativeLayout siRl = (SIRelativeLayout) parent;
-            siRl.exit(false);
+        Log.d(TAG, "exit: ...");
+
+        ViewParent parent = getParent();
+        if (parent instanceof ViewGroup) {
+            ViewGroup viewGroup = (ViewGroup) parent;
+            viewGroup.animate().alpha(0).setDuration(EXIT_TIME).start();
         }
+
+        ViewPropertyAnimator viewPropertyAnimator = this.animate().alpha(0).setDuration(EXIT_TIME);
+        viewPropertyAnimator.setListener(new Animator.AnimatorListener() {
+            @Override
+            public void onAnimationStart(Animator animation) {
+
+            }
+
+            @Override
+            public void onAnimationEnd(Animator animation) {
+                if (activity != null) {
+                    activity.finish();
+                    activity.overridePendingTransition(R.anim.fade_in, R.anim.fade_out);
+                }
+            }
+
+            @Override
+            public void onAnimationCancel(Animator animation) {
+
+            }
+
+            @Override
+            public void onAnimationRepeat(Animator animation) {
+
+            }
+        });
+        viewPropertyAnimator.start();
+
     }
 
-    private float startY;
-    private long downTime;
 
     @Override
     public boolean onTouchEvent(MotionEvent event) {
         int touchCount = event.getPointerCount();
         int action = event.getAction() & MotionEvent.ACTION_MASK;
-
+        Log.d(TAG, "onTouchEvent: action:" + action + ", touchCount:" + touchCount + ", mPinchMode:" + mPinchMode);
         super.onTouchEvent(event);
 
 
         //最后一个点抬起或者取消，结束所有模式
         if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+            if (vTracker != null) {
+                vTracker.recycle();
+                vTracker = null;
+            }
+
             if (action == MotionEvent.ACTION_UP) {
                 long now = System.currentTimeMillis();
-                if (now - downTime < 180) {
+                if (now - downTime < 80) {
+                    Log.d(TAG, "onTouchEvent: CLICK!!! exit()");
                     exit();
+                    return true;
                 }
             }
+
+            Log.d(TAG, "onTouchEvent: fingout:" + isFlingout);
 
             //如果之前是缩放模式,还需要触发一下缩放结束动画
             if (mPinchMode == PINCH_MODE_SCALE) {
@@ -840,6 +843,18 @@ public class PinchImageView extends android.support.v7.widget.AppCompatImageView
                     mPinchMode = PINCH_MODE_FREE;
                 } else {
                     mPinchMode = PINCH_MODE_SCROLL;
+                }
+                sprintBack();
+            } else if (mPinchMode == DRAG_MODE_SCROLL) {
+                float rawY = event.getRawY();
+                float v = Math.abs(rawY - startRawY);
+                if (v > halfWindowHeight * 2 / 3) {
+                    exit();
+                } else {
+                    if (!isFlingout) {
+                        sprintBack();
+                    }
+
                 }
             }
 //            if (mPinchMode == PINCH_MODE_SCROLL) {
@@ -863,8 +878,19 @@ public class PinchImageView extends android.support.v7.widget.AppCompatImageView
             }
             //第一个点按下，开启滚动模式，记录开始滚动的点
         } else if (action == MotionEvent.ACTION_DOWN) {
+
+            if (vTracker == null) {
+                vTracker = VelocityTracker.obtain();
+            } else {
+                vTracker.clear();
+            }
+            vTracker.addMovement(event);
+
+
             downTime = System.currentTimeMillis();
             startY = event.getY();
+            lastRawY = event.getRawY();
+            startRawY = event.getRawY();
             //在矩阵动画过程中不允许启动滚动模式
             if (!(mScaleAnimator != null && mScaleAnimator.isRunning())) {
                 //停止所有动画
@@ -884,6 +910,7 @@ public class PinchImageView extends android.support.v7.widget.AppCompatImageView
             //保存缩放的两个手指
             saveScaleContext(event.getX(0), event.getY(0), event.getX(1), event.getY(1));
         } else if (action == MotionEvent.ACTION_MOVE) {
+
             if (!(mScaleAnimator != null && mScaleAnimator.isRunning())) {
                 //在滚动模式下移动
                 if (mPinchMode == PINCH_MODE_SCROLL) {
@@ -900,16 +927,145 @@ public class PinchImageView extends android.support.v7.widget.AppCompatImageView
                     mLastMovePoint.set(lineCenter[0], lineCenter[1]);
                     //处理缩放
                     scale(mScaleCenter, mScaleBase, distance, mLastMovePoint);
+                } else if (touchCount == 1 && action == MotionEvent.ACTION_MOVE) {
+                    vTracker.addMovement(event);
+                    vTracker.computeCurrentVelocity(100);
+                    float yVelocity = Math.abs(vTracker.getYVelocity());
+                    float xM = event.getX() - mLastMovePoint.x;
+                    float yM = event.getY() - mLastMovePoint.y;
+                    Log.d(TAG, "onTouchEvent: .... moving...yM:" + yM + ", yVelocity:" + yVelocity);
+
+                    if (yVelocity > 60 && !isFlingout) {
+                        flingOut(yVelocity);
+                        return false;
+                    }
+                    //每次移动产生一个差值累积到图片位置上
+//                    scrollBy(xM, yM);
+                    //记录新的移动点
+                    mLastMovePoint.set(event.getX(), event.getY());
+
+                    float rawY = event.getRawY();
+
+                    float v = rawY - lastRawY;
+                    setTranslationY(getTranslationY() + v);
+
+                    lastRawY = rawY;
+                    //在缩放模式下移动
+
+                    float movement = event.getRawY() - startRawY;
+                    float alp = 1.0f - Math.abs(movement / halfWindowHeight);
+
+                    float viewAlpha = alp < 0.5f ? 0.5f : alp;
+                    setBackgroudAlpha(viewAlpha);
+
+                    mPinchMode = DRAG_MODE_SCROLL;
                 }
             }
         }
-        if (mPinchMode != PINCH_MODE_SCROLL) {
-            //无论如何都处理各种外部手势
-            mGestureDetector.onTouchEvent(event);
-        }
+
 
         return true;
     }
+
+    ViewPropertyAnimator viewPropertyAnimator = null;
+
+    private void flingOut(float speed) {
+        isFlingout = true;
+        Log.d(TAG, "flingOut: .....transY:" + getTranslationY() + ", isFlingout:" + isFlingout);
+
+        ValueAnimator valueAnimator = ValueAnimator.ofFloat(getTranslationY(), -2000);
+        float distance = 2000 - Math.abs(getTranslationY());
+        int duration = (int) (distance / Math.abs(speed) * 100);
+        Log.d(TAG, "flingOut: duration:" + duration);
+        valueAnimator.setDuration(duration);
+        valueAnimator.addUpdateListener(new ValueAnimator.AnimatorUpdateListener() {
+            @Override
+            public void onAnimationUpdate(ValueAnimator animation) {
+                Float animatedValue = (Float) animation.getAnimatedValue();
+                Log.d(TAG, "flingOut  onAnimationUpdate: animatedValue:"+animatedValue);
+                setTranslationY(animatedValue);
+            }
+        });
+
+        valueAnimator.addListener(new Animator.AnimatorListener() {
+            @Override
+            public void onAnimationStart(Animator animation) {
+
+            }
+
+            @Override
+            public void onAnimationEnd(Animator animation) {
+                if (activity != null) {
+                    activity.finish();
+                    activity.overridePendingTransition(R.anim.fade_in, R.anim.fade_out);
+                }
+                isFlingout = false;
+                Log.d(TAG, "flingOut.onAnimationEnd: .....isFlingout:" + isFlingout + ", transY:" + getTranslationY());
+            }
+
+            @Override
+            public void onAnimationCancel(Animator animation) {
+
+            }
+
+            @Override
+            public void onAnimationRepeat(Animator animation) {
+
+            }
+        });
+
+        valueAnimator.start();
+
+//        viewPropertyAnimator = this.animate().translationY(-1200).setDuration(500);
+//        viewPropertyAnimator.setListener(new Animator.AnimatorListener() {
+//            @Override
+//            public void onAnimationStart(Animator animation) {
+//                Log.d(TAG, "flingOut.onAnimationStart: .....transY:" + getTranslationY());
+//            }
+//
+//            @Override
+//            public void onAnimationEnd(Animator animation) {
+//                if (activity != null) {
+//                    activity.finish();
+//                    activity.overridePendingTransition(R.anim.fade_in, R.anim.fade_out);
+//                }
+//                isFlingout = false;
+//                Log.d(TAG, "flingOut.onAnimationEnd: .....isFlingout:" + isFlingout + ", transY:" + getTranslationY());
+//            }
+//
+//            @Override
+//            public void onAnimationCancel(Animator animation) {
+//                Log.d(TAG, "flingOut.onAnimationCancel: .....isFlingout:" + isFlingout);
+//            }
+//
+//            @Override
+//            public void onAnimationRepeat(Animator animation) {
+//
+//            }
+//        });
+//        viewPropertyAnimator.start();
+    }
+
+    private void sprintBack() {
+        Log.d(TAG, "sprintBack: ...");
+        this.animate().translationY(0).alpha(1).setDuration(200).start();
+        ViewParent parent = getParent();
+        if (parent instanceof ViewGroup) {
+            ViewGroup viewGroup = (ViewGroup) parent;
+            viewGroup.animate().alpha(1).setDuration(200).start();
+        }
+    }
+
+    private void setBackgroudAlpha(float alpha) {
+        ViewParent parent = getParent();
+        if (parent instanceof ViewGroup) {
+            ViewGroup viewGroup = (ViewGroup) parent;
+            viewGroup.setAlpha(alpha);
+        }
+    }
+
+    float lastRawY = 0f;
+    float startRawY = 0f;
 
     private void animateBack() {
         animate().translationY(0).setDuration(180).start();
@@ -1193,7 +1349,7 @@ public class PinchImageView extends android.support.v7.widget.AppCompatImageView
         }
 //        Log.d(TAG, "scaleEnd: change:" + change + ", scalePost:" + scalePost);
         //只有有执行修正才执行动画
-        if (change ) {
+        if (change) {
             //计算结束矩阵
             Matrix animEnd = MathUtils.matrixTake(mOuterMatrix);
             animEnd.postScale(scalePost, scalePost, mLastMovePoint.x, mLastMovePoint.y);
